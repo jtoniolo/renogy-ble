@@ -806,7 +806,7 @@ class RenogyBleClient:
                 parsed_updates: dict[str, Any] = {}
                 read_specs = (
                     _InverterReadSpec(
-                        4000, 32, "_parse_inverter_main_response", retries=2
+                        4000, 10, "_parse_inverter_main_response", retries=2
                     ),
                     _InverterReadSpec(4408, 6, "_parse_inverter_load_response"),
                     _InverterReadSpec(4327, 7, "_parse_inverter_charging_response"),

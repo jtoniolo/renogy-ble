@@ -280,7 +280,7 @@ def test_read_device_reads_inverter_data_with_validated_frames(monkeypatch):
             responses = {
                 4000: _modbus_read_response(
                     INVERTER_DEVICE_ID,
-                    [2300, 125, 2295, 250, 6000, 401, 255, 0, 0, 5995] + ([0] * 22),
+                    [2300, 125, 2295, 250, 6000, 401, 255, 0, 0, 5995],
                 ),
                 4408: _modbus_read_response(
                     INVERTER_DEVICE_ID, [175, 500, 550, 0, 0, 0]
@@ -1279,7 +1279,7 @@ def test_read_device_inverter_preserves_cached_metadata_in_persistent_session(
             responses = {
                 4000: _modbus_read_response(
                     INVERTER_DEVICE_ID,
-                    [2300, 100, 2290, 200, 6000, 402, 260, 0, 0, 6000] + ([0] * 22),
+                    [2300, 100, 2290, 200, 6000, 402, 260, 0, 0, 6000],
                 ),
                 4408: _modbus_read_response(
                     INVERTER_DEVICE_ID, [150, 450, 475, 0, 0, 0]
