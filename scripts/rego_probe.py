@@ -16,6 +16,7 @@ NOTIFY_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 INIT_CHAR_UUID = "0000ffd4-0000-1000-8000-00805f9b34fb"
 DEVICE_IDS = [0x20, 0xFF]  # try 0x20 first, 0xFF as fallback
 READS = [
+    ("control_4327_known_good", 4327, 7),  # positive control: proves transport
     ("ac_input", 0x5B01, 9),
     ("ac_output", 0x5C01, 14),
     ("battery_input", 0x5D01, 11),
@@ -43,6 +44,17 @@ def build_read(device_id: int, register: int, count: int) -> bytes:
 def decode(name: str, register: int, count: int, resp: bytes) -> bool:
     print(f"\n=== {name} (reg 0x{register:04X}, requested {count} regs) ===")
     print("raw:", resp.hex())
+    if len(resp) >= 3 and resp[1] == 0x83:
+        print(
+            f"  MODBUS EXCEPTION from device 0x{resp[0]:02X}: "
+            f"code 0x{resp[2]:02X}"
+            + (
+                " (Illegal Data Address — register does not exist)"
+                if resp[2] == 0x02
+                else ""
+            )
+        )
+        return False
     if len(resp) < 5 or resp[1] != 0x03:
         print("  (no valid 0x03 response)")
         return False
@@ -53,8 +65,8 @@ def decode(name: str, register: int, count: int, resp: bytes) -> bool:
     ]
     print("  16-bit regs:", [f"{w}" for w in words])
     for k in range(0, len(words) - 1):
-        be = (words[k] << 16) | words[k + 1]          # high-word-first
-        le = (words[k + 1] << 16) | words[k]          # low-word-first
+        be = (words[k] << 16) | words[k + 1]  # high-word-first
+        le = (words[k + 1] << 16) | words[k]  # low-word-first
         s_be = struct.unpack(">i", be.to_bytes(4, "big"))[0]
         print(
             f"  32-bit @reg{k}: hi-first u={be} "
