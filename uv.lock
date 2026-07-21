@@ -195,7 +195,7 @@ wheels = [
 
 [[package]]
 name = "renogy-ble"
-version = "2.3.4"
+version = "2.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "bleak" },
