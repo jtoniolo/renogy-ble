@@ -24,7 +24,7 @@ INIT_CHAR_UUID = "0000ffd4-0000-1000-8000-00805f9b34fb"
 DEVICE_IDS = [0xFF, 0x20]  # app uses 0xFF for the thing-model block
 READS = [
     ("control_4327_known_good", 4327, 7),  # positive control: proves transport
-    ("ac_input_5B01_count9", 0x5B01, 9),   # the group under test
+    ("ac_input_5B01_count9", 0x5B01, 9),  # the group under test
 ]
 
 
@@ -58,7 +58,9 @@ def decode_ac_input(words: list[int], payload: bytes) -> None:
     watts = words[8]
     print("  --- decoded per ac_input.rtm ---")
     print(f"  AC_input_Voltage   = {v_raw * 0.1:.1f} V   (raw {v_raw})")
-    print(f"  AC_input_current   = {i_signed * 0.01:.2f} (unit mA, signed raw {i_signed})")
+    print(
+        f"  AC_input_current   = {i_signed * 0.01:.2f} (unit mA, signed raw {i_signed})"
+    )
     print(f"  AC_input_frequency = {f_raw * 0.01:.2f} Hz  (raw {f_raw})")
     print(f"  Ac_Volt_Range      = {range_raw}")
     print(f"  AC_input_watts     = {watts} W   <== native power register")
