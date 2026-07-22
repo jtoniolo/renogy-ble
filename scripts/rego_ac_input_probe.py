@@ -1,8 +1,15 @@
-"""One-shot read probe for the REGO 3000 thing-model registers.
+"""Read-only probe for the REGO 3000 ac_input thing-model group (mid 0x5B01).
 
-Read-only (Modbus function 0x03). Prints the raw response for each register
-and every candidate decode so the wire encoding can be confirmed by eye.
-Run where Bluetooth can reach the inverter:  python scripts/rego_probe.py
+Confirms whether AC_input_watts (native W register) is served on-wire, and
+decodes the whole 9-register block per assets/rtmmodels/ac_input.rtm:
+
+  reg 0-1  AC_input_Voltage    float  x0.1  V
+  reg 2-3  AC_input_current    float  x0.01 (unit mA, signed)
+  reg 4-5  AC_input_frequency  float  x0.01 Hz
+  reg 6-7  Ac_Volt_Range       int          (setting)
+  reg 8    AC_input_watts      int          W   <-- the field in question
+
+Run where Bluetooth can reach the inverter:  python scripts/rego_ac_input_probe.py
 """
 
 import asyncio
@@ -14,20 +21,10 @@ BLE_NAME = "BTRIC130000029"
 WRITE_UUID = "0000ffd1-0000-1000-8000-00805f9b34fb"
 NOTIFY_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
 INIT_CHAR_UUID = "0000ffd4-0000-1000-8000-00805f9b34fb"
-DEVICE_IDS = [0x20, 0xFF]  # try 0x20 first, 0xFF as fallback
+DEVICE_IDS = [0xFF, 0x20]  # app uses 0xFF for the thing-model block
 READS = [
     ("control_4327_known_good", 4327, 7),  # positive control: proves transport
-    # DC Home APK reads the REGO AC/battery status block at register 0x0FA0
-    # (4000) with count 10 (frame "030FA0000A", h4/c.java case "rgo_inv_40_09").
-    # The library reads 4000 with count 32 (ble.py:809) — this over-reads the
-    # ~10-register block and the REGO rejects the whole request. These two lines
-    # prove the count, not the address, is the bug:
-    ("app_0FA0_count10_EXPECT_DATA", 0x0FA0, 10),
-    ("lib_0FA0_count32_EXPECT_EXCEPTION", 0x0FA0, 32),
-    # other confirmed app reads for this SKU (RIV1230RCH-SPS, list o5.b.f29960f)
-    ("app_10E8_count6", 0x10E8, 6),
-    ("app_112E_count15", 0x112E, 15),
-    ("app_1010_count9", 0x1010, 9),
+    ("ac_input_5B01_count9", 0x5B01, 9),   # the group under test
 ]
 
 
@@ -49,18 +46,32 @@ def build_read(device_id: int, register: int, count: int) -> bytes:
     return body + modbus_crc(body)
 
 
+def decode_ac_input(words: list[int], payload: bytes) -> None:
+    if len(words) < 9:
+        print(f"  !! expected 9 regs, got {len(words)} — cannot decode group")
+        return
+    v_raw = (words[0] << 16) | words[1]
+    i_raw = (words[2] << 16) | words[3]
+    i_signed = struct.unpack(">i", i_raw.to_bytes(4, "big"))[0]
+    f_raw = (words[4] << 16) | words[5]
+    range_raw = (words[6] << 16) | words[7]
+    watts = words[8]
+    print("  --- decoded per ac_input.rtm ---")
+    print(f"  AC_input_Voltage   = {v_raw * 0.1:.1f} V   (raw {v_raw})")
+    print(f"  AC_input_current   = {i_signed * 0.01:.2f} (unit mA, signed raw {i_signed})")
+    print(f"  AC_input_frequency = {f_raw * 0.01:.2f} Hz  (raw {f_raw})")
+    print(f"  Ac_Volt_Range      = {range_raw}")
+    print(f"  AC_input_watts     = {watts} W   <== native power register")
+    print(f"  (sanity V*I as VA  = {v_raw * 0.1 * i_signed * 0.01:.1f})")
+
+
 def decode(name: str, register: int, count: int, resp: bytes) -> bool:
     print(f"\n=== {name} (reg 0x{register:04X}, requested {count} regs) ===")
     print("raw:", resp.hex())
     if len(resp) >= 3 and resp[1] == 0x83:
         print(
-            f"  MODBUS EXCEPTION from device 0x{resp[0]:02X}: "
-            f"code 0x{resp[2]:02X}"
-            + (
-                " (Illegal Data Address — register does not exist)"
-                if resp[2] == 0x02
-                else ""
-            )
+            f"  MODBUS EXCEPTION from device 0x{resp[0]:02X}: code 0x{resp[2]:02X}"
+            + (" (Illegal Data Address)" if resp[2] == 0x02 else "")
         )
         return False
     if len(resp) < 5 or resp[1] != 0x03:
@@ -71,26 +82,21 @@ def decode(name: str, register: int, count: int, resp: bytes) -> bool:
     words = [
         int.from_bytes(payload[i : i + 2], "big") for i in range(0, len(payload), 2)
     ]
-    print("  16-bit regs:", [f"{w}" for w in words])
-    for k in range(0, len(words) - 1):
-        be = (words[k] << 16) | words[k + 1]  # high-word-first
-        le = (words[k + 1] << 16) | words[k]  # low-word-first
-        s_be = struct.unpack(">i", be.to_bytes(4, "big"))[0]
-        print(
-            f"  32-bit @reg{k}: hi-first u={be} "
-            f"(x0.1={be * 0.1:.2f} x0.01={be * 0.01:.3f}) "
-            f"hi-first s={s_be} | lo-first u={le}"
-        )
+    print("  16-bit regs:", [str(w) for w in words])
+    if register == 0x5B01:
+        decode_ac_input(words, payload)
     return True
 
 
 async def main() -> None:
+    print(f"scanning for {BLE_NAME} ...")
     dev = await BleakScanner.find_device_by_filter(
         lambda d, ad: (d.name or ad.local_name or "") == BLE_NAME, timeout=20.0
     )
     if dev is None:
         print(f"device {BLE_NAME} not found in range")
         return
+    print(f"found {dev.address}; connecting ...")
     async with BleakClient(dev) as client:
         got = {}
 
@@ -121,7 +127,7 @@ async def main() -> None:
                     any_ok = True
                 await asyncio.sleep(1.0)
             if any_ok:
-                break  # this device_id works; stop
+                break
         await client.stop_notify(NOTIFY_UUID)
 
 
